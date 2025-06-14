@@ -22,6 +22,7 @@ type ProjectContextType = {
   getProjectDocuments: (projectId: string) => ProjectDocument[];
   getDocumentsByReviewStage: (projectId: string, reviewStage: string) => ProjectDocument[];
   sendProjectDocuments: (orderId: string, customerEmail: string, customerName: string) => Promise<void>;
+  fetchProjectDocumentsFromSupabase: (projectId: string) => Promise<ProjectDocument[]>;
 };
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -303,12 +304,12 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setOrders(prevOrders => [...prevOrders, data]);
 
-    // Automatically send document delivery email after successful order
-    // Use the newly created order data directly instead of searching in state
+    // Smart document delivery: Fetch documents from Supabase and send via Brevo
     try {
+      console.log('🚀 Starting smart document delivery for order:', data.id);
       await sendProjectDocumentsForOrder(data, order.customerEmail, order.customerName);
     } catch (emailError) {
-      console.error('Error sending document delivery email:', emailError);
+      console.error('❌ Error in smart document delivery:', emailError);
       // Don't throw here as the order was successful, just log the email error
     }
 
@@ -411,38 +412,68 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     );
   };
 
+  // Fetch project documents directly from Supabase (fresh data)
+  const fetchProjectDocumentsFromSupabase = async (projectId: string): Promise<ProjectDocument[]> => {
+    console.log('📊 Fetching fresh documents from Supabase for project:', projectId);
+    
+    try {
+      const { data, error } = await supabase
+        .from('project_documents')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error fetching project documents from Supabase:', error);
+        return [];
+      }
+
+      console.log('✅ Fetched', data?.length || 0, 'documents from Supabase');
+      return data || [];
+    } catch (error) {
+      console.error('❌ Exception while fetching documents:', error);
+      return [];
+    }
+  };
+
   // Helper function to send documents for a specific order object
   const sendProjectDocumentsForOrder = async (order: Order, customerEmail: string, customerName: string) => {
     try {
-      // Get all documents for the project
-      const documents = getProjectDocuments(order.projectId);
+      console.log('📋 Processing document delivery for order:', order.id);
+      console.log('📁 Project ID:', order.projectId);
       
-      if (documents.length === 0) {
-        console.log('No documents found for project, skipping email');
-        return;
-      }
-
-      // Format documents for email
+      // Fetch fresh documents from Supabase
+      const documents = await fetchProjectDocumentsFromSupabase(order.projectId);
+      
+      console.log('📊 Documents found:', documents.length);
+      
+      // Format documents for email (if any exist)
       const formattedDocuments = documents.map(doc => ({
         name: doc.name,
         url: doc.url,
         category: doc.document_category,
-        review_stage: doc.review_stage
+        review_stage: doc.review_stage,
+        size: doc.size
       }));
 
-      // Send document delivery email
+      // Send smart document delivery email
       await sendDocumentDelivery({
         project_title: order.projectTitle,
         customer_name: customerName,
         customer_email: customerEmail,
         order_id: order.id,
         documents: formattedDocuments,
-        access_expires: 'Never (lifetime access)'
+        access_expires: 'Lifetime access'
       });
 
-      console.log('Document delivery email sent successfully');
+      if (documents.length > 0) {
+        console.log('✅ Document delivery email sent successfully with', documents.length, 'documents');
+      } else {
+        console.log('📭 "Documents coming soon" email sent (no documents available yet)');
+      }
     } catch (error) {
-      console.error('Error sending project documents:', error);
+      console.error('❌ Error in smart document delivery:', error);
       throw error;
     }
   };
@@ -483,6 +514,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getProjectDocuments,
         getDocumentsByReviewStage,
         sendProjectDocuments,
+        fetchProjectDocumentsFromSupabase,
       }}
     >
       {children}

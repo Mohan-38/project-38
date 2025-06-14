@@ -365,27 +365,35 @@ export const sendOrderConfirmation = async (
   }
 };
 
+// Smart Document Delivery - Fetches from Supabase and sends via Brevo
 export const sendDocumentDelivery = async (data: DocumentDeliveryData): Promise<void> => {
   if (!validateEmail(data.customer_email)) {
     throw new Error('Invalid recipient email address');
   }
 
-  console.log('Attempting to send document delivery email via Brevo...');
-  console.log('Documents to deliver:', data.documents.length);
+  console.log('🚀 Starting smart document delivery process...');
+  console.log('📊 Documents available:', data.documents.length);
 
-  // Try Brevo first
+  // Check if documents are available
+  if (data.documents.length === 0) {
+    console.log('📭 No documents available, sending "coming soon" email...');
+    await sendNoDocumentsNotification(data);
+    return;
+  }
+
+  // Documents are available, send them via Brevo
   try {
     await sendBrevoDocumentDelivery(data);
-    console.log('Document delivery email sent successfully via Brevo');
+    console.log('✅ Document delivery email sent successfully via Brevo');
   } catch (brevoError) {
-    console.log('Brevo failed for document delivery, trying EmailJS fallback...');
+    console.log('❌ Brevo failed for document delivery, trying EmailJS fallback...');
     console.error('Brevo error:', brevoError);
     
     try {
       await sendEmailJSDocumentDelivery(data);
-      console.log('Document delivery email sent successfully via EmailJS');
+      console.log('✅ Document delivery email sent successfully via EmailJS');
     } catch (emailjsError) {
-      console.error('Both Brevo and EmailJS failed for document delivery');
+      console.error('❌ Both Brevo and EmailJS failed for document delivery');
       console.error('EmailJS error:', emailjsError);
       
       // As a last resort, send a simple notification
@@ -394,7 +402,144 @@ export const sendDocumentDelivery = async (data: DocumentDeliveryData): Promise<
   }
 };
 
-// Brevo document delivery
+// Send notification when no documents are available
+const sendNoDocumentsNotification = async (data: DocumentDeliveryData): Promise<void> => {
+  const { date } = getCurrentDateTime();
+
+  try {
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Project Documents Coming Soon - TechCreator</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; }
+          .footer { background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none; }
+          .summary { background: #fef3c7; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #f59e0b; }
+          .highlight { color: #d97706; font-weight: bold; }
+          .timeline { background: #ecfdf5; border: 1px solid #10b981; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📋 Project Documents Coming Soon</h1>
+            <p>Your order is confirmed and being prepared!</p>
+          </div>
+          
+          <div class="content">
+            <h2>Hello ${data.customer_name},</h2>
+            
+            <p>Thank you for purchasing <strong>${data.project_title}</strong>! Your order has been successfully processed.</p>
+            
+            <div class="summary">
+              <h3>📊 Order Summary</h3>
+              <p><strong>Order ID:</strong> <span class="highlight">${data.order_id}</span></p>
+              <p><strong>Project:</strong> ${data.project_title}</p>
+              <p><strong>Order Date:</strong> ${date}</p>
+              <p><strong>Status:</strong> <span class="highlight">Processing</span></p>
+            </div>
+            
+            <div class="timeline">
+              <h3>⏰ Document Delivery Timeline</h3>
+              <p><strong>Your project documents will be delivered within 3 business days.</strong></p>
+              
+              <div style="margin: 20px 0;">
+                <h4>What you'll receive:</h4>
+                <ul>
+                  <li>📁 Complete source code and project files</li>
+                  <li>📚 Comprehensive documentation (3 review stages)</li>
+                  <li>🔧 Installation and setup guides</li>
+                  <li>📋 Technical specifications</li>
+                  <li>💡 Implementation guidelines</li>
+                  <li>🎯 Project review presentations</li>
+                </ul>
+              </div>
+              
+              <div style="background: white; padding: 15px; border-radius: 6px; border-left: 4px solid #10b981;">
+                <p style="margin: 0;"><strong>📧 Delivery Method:</strong> All documents will be sent to this email address with direct download links organized by review stages.</p>
+              </div>
+            </div>
+            
+            <div style="background: #dbeafe; border: 1px solid #3b82f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #1e40af; margin-top: 0;">🔔 What happens next?</h3>
+              <ol style="margin: 0;">
+                <li><strong>Document Preparation:</strong> Our team is organizing your project files</li>
+                <li><strong>Quality Check:</strong> Ensuring all documents are complete and accessible</li>
+                <li><strong>Email Delivery:</strong> You'll receive download links within 3 days</li>
+                <li><strong>Lifetime Access:</strong> Save the email for future downloads</li>
+              </ol>
+            </div>
+            
+            <h3>💬 Need Immediate Assistance?</h3>
+            <p>If you have any questions or need urgent support, please contact us:</p>
+            <p><strong>Email:</strong> <a href="mailto:${CONFIG.developerEmail}">${CONFIG.developerEmail}</a></p>
+            <p><strong>Response Time:</strong> Within 24 hours</p>
+            
+            <p>Thank you for choosing TechCreator. We're preparing your project documents with care!</p>
+          </div>
+          
+          <div class="footer">
+            <p>&copy; 2025 TechCreator. All rights reserved.</p>
+            <p>This is an automated notification. Your documents are being prepared.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const emailData: BrevoEmailData = {
+      sender: {
+        name: CONFIG.brevo.senderName,
+        email: CONFIG.brevo.senderEmail
+      },
+      to: [{
+        email: data.customer_email,
+        name: data.customer_name
+      }],
+      subject: `📋 Project Documents Coming Soon - ${data.project_title} (${data.order_id})`,
+      htmlContent,
+      tags: ['document-preparation', 'order-processing', 'coming-soon']
+    };
+
+    await sendBrevoEmail(emailData);
+    console.log('✅ "Documents coming soon" email sent successfully via Brevo');
+  } catch (error) {
+    console.error('❌ Failed to send "documents coming soon" email:', error);
+    
+    // Fallback to EmailJS for the notification
+    try {
+      const emailjs = await import('@emailjs/browser');
+      
+      await emailjs.send(
+        CONFIG.emailjs.serviceId,
+        CONFIG.emailjs.templates.contact,
+        {
+          name: 'TechCreator Support',
+          email: CONFIG.developerEmail,
+          project_type: 'Document Preparation',
+          budget: 'N/A',
+          message: `Order processed for ${data.customer_name} (${data.customer_email})\n\nOrder: ${data.order_id}\nProject: ${data.project_title}\n\nStatus: Documents will be delivered within 3 days\nCustomer has been notified about the timeline.`,
+          to_email: data.customer_email,
+          reply_to: CONFIG.developerEmail
+        },
+        CONFIG.emailjs.publicKey
+      );
+      
+      console.log('✅ Fallback notification sent via EmailJS');
+    } catch (emailjsError) {
+      console.error('❌ All notification methods failed:', emailjsError);
+      throw new Error('Failed to send order notification');
+    }
+  }
+};
+
+// Brevo document delivery (when documents are available)
 const sendBrevoDocumentDelivery = async (data: DocumentDeliveryData): Promise<void> => {
   const { date } = getCurrentDateTime();
 
